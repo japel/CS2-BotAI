@@ -25,7 +25,7 @@ public static class BotOffsets
 }
 
 [MinimumApiVersion(304)]
-public class BotAI : BasePlugin
+public partial class BotAI : BasePlugin
 {
     public override string ModuleName => "Bot AI - Patches";
     public override string ModuleVersion => "1.8.12";
@@ -35,6 +35,12 @@ public class BotAI : BasePlugin
 
     private readonly List<PatchInfo> _appliedPatches = [];
     private readonly bool _isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+
+    // Map-scoped patches: resolved at load, written/restored per map in ApplyMapScope.
+    private record ScopedPatch(nint Address, List<byte> Bytes, string ExpectedOriginal, PatchScope Scope);
+    private readonly Dictionary<string, ScopedPatch> _scoped = [];
+    private readonly SortedDictionary<string, string> _status = [];
+    private MapKind _mapKind = MapKind.Unknown;
 
 
 
@@ -58,7 +64,7 @@ public class BotAI : BasePlugin
         foreach (var (name, def) in patchDefinitions)
         {
             nint sigAddr = NativeAPI.FindSignature(GameUtils.GetModulePath("server"), def.signature);
-            if (sigAddr == 0) { Logger.LogError($"'{name}': signature not found."); continue; }
+            if (sigAddr == 0) { Logger.LogError($"'{name}': signature not found."); _status[name] = "FAILED: signature not found"; continue; }
             sites[name] = sigAddr + def.patchOffset;
         }
 
@@ -82,8 +88,8 @@ public class BotAI : BasePlugin
         foreach (var name in caveNames)
         {
             if (sites.TryGetValue(name, out nint addr) && WritePatch(name, addr, patchBytes[name], patchDefinitions[name].expectedOriginal))
-            { appliedCaves.Add(name); Logger.LogInformation($"{name}: applied."); }
-            else Logger.LogError($"{name}: FAILED.");
+            { appliedCaves.Add(name); _status[name] = "applied"; Logger.LogInformation($"{name}: applied."); }
+            else { _status.TryAdd(name, "FAILED"); Logger.LogError($"{name}: FAILED."); }
         }
 
         foreach (var name in patchDefinitions.Keys)
@@ -97,11 +103,20 @@ public class BotAI : BasePlugin
                 continue;
             }
 
+            var scope = PatchScopes.Of(name);
+            if (scope != PatchScope.Always && sites.TryGetValue(name, out nint scopedAddr))
+            {
+                _scoped[name] = new ScopedPatch(scopedAddr, patchBytes[name], patchDefinitions[name].expectedOriginal, scope);
+                _status[name] = $"deferred ({scope})";
+                continue;
+            }
+
             bool ok = sites.TryGetValue(name, out nint addr)
                 && WritePatch(name, addr, patchBytes[name], patchDefinitions[name].expectedOriginal);
-            if (ok) Logger.LogInformation($"{name}: applied.");
+            if (ok) { _status[name] = "applied"; Logger.LogInformation($"{name}: applied."); }
             else
             {
+                _status.TryAdd(name, "FAILED");
                 Logger.LogError($"{name}: FAILED.");
                 // Roll back the now-orphaned cave so we never leave half a pair behind.
                 if (appliedCaves.Contains(caveName))
@@ -139,7 +154,12 @@ public class BotAI : BasePlugin
             return HookResult.Continue;
         });
 
-        Logger.LogInformation($"Applied {_appliedPatches.Count}/{patchDefinitions.Count} patches.");
+        Logger.LogInformation($"Applied {_appliedPatches.Count}/{patchDefinitions.Count} patches ({_scoped.Count} map-scoped, applied per map).");
+
+        RegisterListener<Listeners.OnMapStart>(_ => AddTimer(1.0f, ApplyMapScope));
+        RegisterEventHandler<EventRoundStart>((_, _) => { ApplyMapScope(); return HookResult.Continue; });
+        RegisterHostageStats();
+        if (hotReload) ApplyMapScope();
     }
 
     public override void Unload(bool hotReload)
