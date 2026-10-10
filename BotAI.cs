@@ -104,7 +104,7 @@ public partial class BotAI : BasePlugin
             }
 
             var scope = PatchScopes.Of(name);
-            if (scope != PatchScope.Always && sites.TryGetValue(name, out nint scopedAddr))
+            if (PatchScopes.IsDeferred(name) && sites.TryGetValue(name, out nint scopedAddr))
             {
                 _scoped[name] = new ScopedPatch(scopedAddr, patchBytes[name], patchDefinitions[name].expectedOriginal, scope);
                 _status[name] = $"deferred ({scope})";
