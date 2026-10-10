@@ -72,6 +72,13 @@ public partial class BotAI
         command.ReplyToCommand($"[botmod] {name} -> {_status[name]}");
     }
 
+    // Utilities.GetPlayers() only scans slots < Server.MaxPlayers, which is 1 on a listen
+    // server started with `map` from the console, so it misses every bot. Scan controllers instead.
+    private static List<CCSPlayerController> Players() =>
+        Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller")
+            .Where(p => p.IsValid && !p.IsHLTV && p.Connected == PlayerConnectedState.Connected)
+            .ToList();
+
     // ── Hostage round stats (for measuring bot objective play) ───────────────
 
     private record RoundStats(string Map, int Round, float? FirstPickupSec, int Pickups, int Rescues, string Winner, int Ct, int T);
@@ -89,7 +96,7 @@ public partial class BotAI
             _freezeEndTime = Server.CurrentTime;
             _firstPickupSec = null;
             _pickups = _rescues = 0;
-            var players = Utilities.GetPlayers();
+            var players = Players();
             _ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
             _tCount = players.Count(p => p.Team == CsTeam.Terrorist);
             return HookResult.Continue;
