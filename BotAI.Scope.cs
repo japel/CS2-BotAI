@@ -74,13 +74,13 @@ public partial class BotAI
 
     // ── Hostage round stats (for measuring bot objective play) ───────────────
 
-    private record RoundStats(string Map, int Round, float? FirstPickupSec, int Pickups, int Rescues, string Winner);
+    private record RoundStats(string Map, int Round, float? FirstPickupSec, int Pickups, int Rescues, string Winner, int Ct, int T);
 
     private readonly List<RoundStats> _rounds = [];
     private int _roundNo;
     private float _freezeEndTime;
     private float? _firstPickupSec;
-    private int _pickups, _rescues;
+    private int _pickups, _rescues, _ctCount, _tCount;
 
     private void RegisterHostageStats()
     {
@@ -89,6 +89,9 @@ public partial class BotAI
             _freezeEndTime = Server.CurrentTime;
             _firstPickupSec = null;
             _pickups = _rescues = 0;
+            var players = Utilities.GetPlayers();
+            _ctCount = players.Count(p => p.Team == CsTeam.CounterTerrorist);
+            _tCount = players.Count(p => p.Team == CsTeam.Terrorist);
             return HookResult.Continue;
         });
         RegisterEventHandler<EventHostageFollows>((e, _) =>
@@ -103,7 +106,7 @@ public partial class BotAI
             if (_mapKind != MapKind.Hostage) return HookResult.Continue;
             string winner = e.Winner switch { (int)CsTeam.CounterTerrorist => "CT", (int)CsTeam.Terrorist => "T", _ => "-" };
             if (winner == "-") return HookResult.Continue;   // game commencing / restart, not a played round
-            _rounds.Add(new RoundStats(Server.MapName, ++_roundNo, _firstPickupSec, _pickups, _rescues, winner));
+            _rounds.Add(new RoundStats(Server.MapName, ++_roundNo, _firstPickupSec, _pickups, _rescues, winner, _ctCount, _tCount));
             return HookResult.Continue;
         });
     }
@@ -127,11 +130,12 @@ public partial class BotAI
         command.ReplyToCommand(
             $"[botmod] hostage rounds={_rounds.Count} pickupRounds={withPickup} " +
             $"rescues={_rounds.Sum(r => r.Rescues)} ctWins={_rounds.Count(r => r.Winner == "CT")} " +
-            $"avgFirstPickup={(times.Count > 0 ? $"{times.Average():F0}s" : "-")}");
+            $"avgFirstPickup={(times.Count > 0 ? $"{times.Average():F0}s" : "-")} " +
+            $"unevenRounds={_rounds.Count(r => r.Ct != r.T)}");
         foreach (var r in _rounds.TakeLast(10))
             command.ReplyToCommand(
                 $"[botmod]   #{r.Round} {r.Map} pickup={(r.FirstPickupSec is { } t ? $"{t:F0}s" : "-")} " +
-                $"follows={r.Pickups} rescued={r.Rescues} winner={r.Winner}");
+                $"follows={r.Pickups} rescued={r.Rescues} winner={r.Winner} {r.Ct}v{r.T}");
     }
 
     [ConsoleCommand("css_botmod_stats_reset", "Clear hostage round stats")]
