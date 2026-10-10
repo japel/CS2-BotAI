@@ -19,7 +19,9 @@ public partial class BotAI
 
         foreach (var (name, sp) in _scoped)
         {
-            bool wanted = _forceAllPatches || PatchScopes.Wanted(sp.Scope, kind);
+            bool wanted = _patchOverrides.TryGetValue(name, out bool forced)
+                ? forced
+                : _forceAllPatches || PatchScopes.Wanted(sp.Scope, kind);
             var applied = _appliedPatches.FirstOrDefault(p => p.Name == name);
 
             if (wanted && applied == null)
@@ -49,6 +51,25 @@ public partial class BotAI
         _forceAllPatches = command.GetArg(1) == "all";
         ApplyMapScope();
         command.ReplyToCommand($"[botmod] scope={(_forceAllPatches ? "all" : "auto")}");
+    }
+
+    // A/B testing: force one scoped patch on/off regardless of map ("auto" clears).
+    private readonly Dictionary<string, bool> _patchOverrides = [];
+
+    [ConsoleCommand("css_botmod_patch", "Force a map-scoped patch on/off, or auto")]
+    [CommandHelper(minArgs: 2, usage: "<patch> on|off|auto", whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
+    public void OnPatchCommand(CCSPlayerController? caller, CommandInfo command)
+    {
+        string name = command.GetArg(1), mode = command.GetArg(2);
+        if (!_scoped.ContainsKey(name))
+        {
+            command.ReplyToCommand($"[botmod] not a map-scoped patch: {name} (scoped: {string.Join(", ", _scoped.Keys)})");
+            return;
+        }
+        if (mode == "auto") _patchOverrides.Remove(name);
+        else _patchOverrides[name] = mode == "on";
+        ApplyMapScope();
+        command.ReplyToCommand($"[botmod] {name} -> {_status[name]}");
     }
 
     // ── Hostage round stats (for measuring bot objective play) ───────────────
