@@ -37,7 +37,8 @@ public partial class BotAI
                 Logger.LogInformation($"{name}: restored for {kind} map.");
             }
 
-            if (!wanted) _status[name] = _patchOverrides.ContainsKey(name) ? "off (forced)" : $"off ({kind} map)";
+            if (!wanted) _status[name] = _patchOverrides.ContainsKey(name) ? "off (forced)"
+                : sp.Scope == PatchScope.Off ? "off (default)" : $"off ({kind} map)";
         }
     }
 
