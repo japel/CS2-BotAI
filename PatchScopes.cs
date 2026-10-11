@@ -1,6 +1,6 @@
 namespace BotAI;
 
-public enum PatchScope { Always, NotHostage }
+public enum PatchScope { Always, NotHostage, Off }
 
 // Patches that only make sense on some map types. Everything not listed is Always.
 // Bomb-only patches stay Always: their code paths never run without a bomb.
@@ -10,7 +10,14 @@ public static class PatchScopes
     // turning OnAudibleEvent_GlobalHearRange + InvestigateNoise_SkipSelfDefenseCheck
     // off on hostage maps cut CT hostage pickups from 15/20 to 7/20 rounds.
     // Use css_botmod_patch <name> on|off to experiment; add entries only with data.
-    private static readonly Dictionary<string, PatchScope> Scopes = new();
+    private static readonly Dictionary<string, PatchScope> Scopes = new()
+    {
+        // Map-wide hearing let bots pre-aim players they could not plausibly hear (player
+        // feedback 2026-10-11). Off: vanilla per-sound hearing ranges, like a human.
+        // Costs some CT hostage commitment (cs_office: pickup rounds 15/20 -> 12/20 with
+        // only this patch off), accepted for fairness. css_botmod_patch ... on to restore.
+        ["OnAudibleEvent_GlobalHearRange"] = PatchScope.Off,
+    };
 
     // Patches resolved up front but written per map, so css_botmod_patch can flip
     // them at runtime. Listed patches follow their scope (default Always).
@@ -29,6 +36,7 @@ public static class PatchScopes
     public static bool Wanted(PatchScope scope, MapKind map) => scope switch
     {
         PatchScope.NotHostage => map != MapKind.Hostage,
+        PatchScope.Off => false,
         _ => true,
     };
 }
